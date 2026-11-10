@@ -35,5 +35,21 @@ async function notifyNudge(nudgeId){try{const {data}=await db.auth.getSession();
  const res=await fetch(url+'/functions/v1/harada-send-push',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token,'apikey':key},body:JSON.stringify({nudge_id:nudgeId})});
  if(!res.ok)console.warn('Push delivery unavailable; in-app nudge was saved.',res.status);
  }catch(e){console.warn('Push delivery unavailable; in-app nudge was saved.',e)}}
-window.HaradaPush={draw,notifyNudge};
+
+let prefs={nudges:true,daily_enabled:false,daily_time:'20:00',timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||'America/Chicago'};
+let loadedFor=null,loading=false,feedback='';
+async function loadPrefs(){const user=await me();if(!user){loadedFor=null;return false}if(loadedFor===user.id)return true;
+ const {data,error}=await db.from('harada_notification_preferences').select('nudges,daily_enabled,daily_time,timezone').eq('user_id',user.id).maybeSingle();if(error)throw error;
+ prefs={nudges:data?.nudges??true,daily_enabled:data?.daily_enabled??false,daily_time:(data?.daily_time||'20:00').slice(0,5),timezone:data?.timezone||Intl.DateTimeFormat().resolvedOptions().timeZone||'America/Chicago'};loadedFor=user.id;return true}
+async function savePrefs(){const user=await me();if(!user)throw Error('Sign in under Friends first.');const payload={user_id:user.id,nudges:prefs.nudges,daily_enabled:prefs.daily_enabled,daily_time:prefs.daily_time,timezone:Intl.DateTimeFormat().resolvedOptions().timeZone||prefs.timezone};const {error}=await db.from('harada_notification_preferences').upsert(payload,{onConflict:'user_id'});if(error)throw error;feedback='Preferences saved.'}
+async function drawSettings(){const host=document.querySelector('#harada-push-settings');if(!host)return;if(loading)return;loading=true;
+ try{const signedIn=await loadPrefs();if(!host.isConnected)return;
+  const st=await status().catch(()=>'error');const enabled=st==='enabled';
+  host.innerHTML=(signedIn?'<div class="notification-pref"><div><strong>Friend nudges</strong><small>“[Friend] says you should [Goal]”</small></div><input id="harada-pref-nudges" type="checkbox" '+(prefs.nudges?'checked':'')+'></div><div class="notification-pref"><div><strong>Daily check-in</strong><small>Get a reminder to review and update today’s goals</small></div><input id="harada-pref-daily" type="checkbox" '+(prefs.daily_enabled?'checked':'')+'></div><div class="notification-pref"><div><strong>Reminder time</strong><small>Uses your phone’s time zone ('+prefs.timezone.replace(/[^A-Za-z0-9_\/+-]/g,'')+')</small></div><input id="harada-pref-time" type="time" value="'+prefs.daily_time+'" '+(!prefs.daily_enabled?'disabled':'')+'></div>':'<p class="friends-muted">Sign in on the Friends tab to save notification preferences.</p>')+'<p class="friends-muted">Phone push: '+(enabled?'Enabled':st==='install'?'Install Harada to your iPhone Home Screen first':st==='blocked'?'Blocked in iPhone settings':'Not enabled on this device')+'</p>'+(signedIn&&!enabled?'<button class="friends-btn" id="harada-settings-enable">Enable phone notifications</button>':'')+(feedback?'<p class="friends-muted" role="status"></p>':'');
+  if(feedback)host.querySelector('[role=status]').textContent=feedback;
+  host.querySelector('#harada-settings-enable')?.addEventListener('click',async()=>{await enable();drawSettings()});
+  for(const [id,key] of [['harada-pref-nudges','nudges'],['harada-pref-daily','daily_enabled'],['harada-pref-time','daily_time']])host.querySelector('#'+id)?.addEventListener('change',async e=>{prefs[key]=key==='daily_time'?e.target.value:e.target.checked;try{await savePrefs()}catch(err){feedback=err.message||String(err)}drawSettings()});
+ }catch(e){if(host.isConnected)host.textContent='Unable to load notification preferences: '+(e.message||e)}finally{loading=false}}
+
+window.HaradaPush={draw,drawSettings,notifyNudge};
 })();
