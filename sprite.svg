@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 244 226">
+  <title>Sprite the meerkat</title>
+  <defs>
+    <linearGradient id="fur" x2="80%" y2="100%" gradientUnits="objectBoundingBox">
+      <stop stop-color="#e5cb9d"/>
+      <stop offset="1" stop-color="#b38b5d"/>
+    </linearGradient>
+    <linearGradient id="cream" x2="70%" y2="100%" gradientUnits="objectBoundingBox">
+      <stop stop-color="#fff3d6"/>
+      <stop offset="1" stop-color="#e8cb9e"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="124" cy="213" rx="81" ry="8" fill="#345039" opacity=".14"/>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <!-- The slim, dark-tipped tail curves up behind her. -->
+    <path d="M135 173c35 13 63 11 85-12 5-5 11-4 10 2-7 31-50 45-95 33z" fill="#b38b5d"/>
+    <path d="M205 173c6-4 11-8 15-12 5-5 11-4 10 2-2 8-6 14-11 20-5-1-10-4-14-10z" fill="#614a37"/>
+    <path d="M86 180c-7 6-11 15-17 18-8 3-13 10-9 14 4 5 26 3 35-1 7-3 10-12 9-20zm44 0c9 5 15 13 21 17 9 4 14 11 10 15-5 5-26 3-34-2-6-3-10-13-11-21z" fill="#98714e"/>
+    <path d="M87 100c-8 15-8 27-12 45-5 21-6 44 9 54 13 9 44 9 57-1 14-12 13-33 7-55-5-19-6-34-17-46z" fill="url(#fur)"/>
+    <path d="M96 105c-5 16-6 29-8 46-4 20-1 35 8 42 9 6 26 6 35-1 10-8 12-25 7-44-4-15-5-29-11-43z" fill="url(#cream)"/>
+    <path d="M83 121c-10 8-16 30-12 44 3 10 13 13 17 8 5-6 1-16 3-25l6-21z" fill="#b58d63"/>
+    <path d="M138 121c9 5 14 17 16 26 7-3 12-10 14-16 3-7 12-6 14 1 4 13-11 32-25 36-12 4-19-6-23-22l-5-18z" fill="url(#fur)"/>
+    <path d="M74 165l2 5m4-5 2 5m91-39-2 5m7-2-2 5" fill="none" stroke="#96714e" stroke-width="2" opacity=".65"/>
+    <!-- Dark eye patches and small ears are Sprite's signature. -->
+    <ellipse cx="65" cy="62" rx="12" ry="17" transform="rotate(-24 65 62)" fill="#745741"/>
+    <ellipse cx="154" cy="62" rx="12" ry="17" transform="rotate(24 154 62)" fill="#745741"/>
+    <path d="M59 71c0-31 20-51 45-53l5-7 3 7c27 0 47 22 48 49 2 28-20 46-50 47-29 0-53-15-51-43z" fill="url(#fur)"/>
+    <path d="M64 74c7-10 21-9 32-1 7 5 20 6 27 0 11-9 27-9 33 2-1 23-22 38-47 38-24 0-44-14-45-39z" fill="url(#cream)"/>
+    <path d="M71 60c4-10 13-14 21-9 8 4 11 15 7 25-4 8-13 11-22 6-8-5-10-13-6-22zm77 0c-4-10-13-14-21-9-8 4-11 15-7 25 4 8 13 11 22 6 8-5 10-13 6-22z" fill="#6b5140"/>
+    <ellipse cx="86" cy="66" rx="8" ry="11" fill="#332a23"/>
+    <ellipse cx="133" cy="66" rx="8" ry="11" fill="#332a23"/>
+    <circle cx="83" cy="62" r="3" fill="#fffaf0"/>
+    <circle cx="130" cy="62" r="3" fill="#fffaf0"/>
+    <ellipse cx="109.5" cy="87" rx="20" ry="14" fill="#f4dfb7"/>
+    <path d="M101 80c0-6 17-6 17 0 0 4-5 8-8 8s-9-4-9-8z" fill="#48362b"/>
+    <path d="M110 87v5m-8-1c2 7 13 8 17 0" fill="none" stroke="#75523c" stroke-width="2.4"/>
+    <path d="M84 85h5m41 0h5" stroke="#d6a586" stroke-width="2.6" opacity=".75"/>
+  </g>
+</svg>
