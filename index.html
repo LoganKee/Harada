@@ -28,4 +28,21 @@ html,body,#app{max-width:100%;overflow-x:clip} .screen{min-width:0;overflow-x:cl
 .friends-avatar-option:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 .friends-avatar-option:disabled{opacity:.65;cursor:default}
 .friends-avatar-option .friends-avatar{width:34px;height:34px}
-</style></head><body><div id="app"></div><script src="app.js?v=12"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script><script src="friends-config.js?v=2"></script><script src="friends.js?v=3"></script><script src="push.js?v=2"></script></body></html>
+/* Calendar growth charts */
+.goal-chart{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:6px 8px;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.goal-axis-y{grid-column:1 / -1;color:var(--ink);font-weight:700;overflow-wrap:anywhere}
+.goal-axis-ticks{display:flex;flex-direction:column;justify-content:space-between;align-items:flex-end;margin:-6px 0}
+.goal-plot{position:relative;height:144px;min-width:0}
+.goal-plot svg{display:block;width:100%;height:100%;overflow:visible}
+.goal-plot line{stroke:var(--line);stroke-width:1}
+.goal-chart-points,.goal-axis-labels{display:grid;grid-template-columns:repeat(var(--buckets),minmax(0,1fr));text-align:center}
+.goal-chart-points{position:absolute;inset:0}
+.goal-chart-points span{position:relative}
+.goal-chart-points i{position:absolute;top:var(--point);left:50%;width:6px;height:6px;border-radius:50%;background:var(--chart-color);transform:translate(-50%,-50%);pointer-events:none}
+.goal-axis-labels,.goal-axis-x{grid-column:2}
+.goal-axis-labels{padding-top:3px}
+.goal-axis-x{text-align:center;color:var(--ink);font-weight:700}
+.goal-progress{margin-top:12px}
+.charthead{flex-wrap:wrap}
+.charthead .grow{min-width:90px;overflow-wrap:anywhere}
+</style></head><body><div id="app"></div><script src="app.js?v=13"></script><script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script><script src="friends-config.js?v=2"></script><script src="friends.js?v=4"></script><script src="push.js?v=2"></script></body></html>

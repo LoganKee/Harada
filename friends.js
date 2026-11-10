@@ -6,7 +6,14 @@ const configured=!!(url&&key&&window.supabase);
 const db=configured?window.supabase.createClient(url,key,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
 let user=null, profile=null, friends=[], requests=[], outgoing=[], shared=[], nudges=[], section='feed', message='', busy=false, syncTimer=null, refreshTimer=null, booted=false;
 const avatars={monkus:{name:'Monkus',src:'monkus.png'},sprite:{name:'Sprite',src:'sprite-avatar.png'}};
-let friendAvatars={};
+let friendAvatars={}, dailyNudges=[], loadedNudgeDay=null;
+const nudgeDateFormat=new Intl.DateTimeFormat('en-US',{
+ timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'
+});
+function nudgeDay(){
+ const parts=Object.fromEntries(nudgeDateFormat.formatToParts(new Date()).map(({type,value})=>[type,value]));
+ return `${parts.year}-${parts.month}-${parts.day}`;
+}
 const ui=()=>{if(app()?.getTab()==='Friends')app().refresh()};
 const error=e=>{message=e?.message||String(e);ui()};
 const friendly=e=>{message=e;ui()};
@@ -24,13 +31,17 @@ async function sync(){if(!user||!db)return;const s=app()?.getState();if(!s)retur
 }
 function scheduleSync(){if(!user)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>sync().catch(error),900)}
 async function load(){if(!user)return;
- const [fr,go,nu,pr]=await Promise.all([
+ const accountId=user.id, date=nudgeDay();
+ const [fr,go,nu,pr,daily]=await Promise.all([
  db.from('harada_friendships').select('*').or(`requester.eq.${user.id},recipient.eq.${user.id}`).order('created_at',{ascending:false}),
  db.from('harada_shared_goals').select('*'),
  db.from('harada_nudges').select('*').or(`sender.eq.${user.id},recipient.eq.${user.id}`).order('created_at',{ascending:false}).limit(50),
- db.from('harada_profiles').select('*').eq('id',user.id).maybeSingle()
+ db.from('harada_profiles').select('*').eq('id',accountId).maybeSingle(),
+ db.from('harada_nudges').select('recipient,goal_id').eq('sender',accountId).eq('nudge_day',date)
  ]);
- for(const r of [fr,go,nu,pr])if(r.error)throw r.error;
+ if(user?.id!==accountId)return;
+ for(const r of [fr,go,nu,pr,daily])if(r.error)throw r.error;
+ dailyNudges=daily.data||[];loadedNudgeDay=date;
  const f=fr.data||[];friends=f.filter(x=>x.status==='accepted');requests=f.filter(x=>x.status==='pending'&&x.recipient===user.id);outgoing=f.filter(x=>x.status==='pending'&&x.requester===user.id);shared=go.data||[];nudges=nu.data||[];profile=pr.data;
  const ids=[...new Set(f.flatMap(x=>[x.requester,x.recipient]).filter(x=>x!==user.id))];
  const names={}, pictures={};
@@ -71,18 +82,19 @@ function profilePictures(){
   `<button type="button" class="friends-avatar-option" data-profile-avatar="${id}" aria-pressed="${id===current}" ${busy||!canSave?'disabled':''}>${avatarImage(id)}<span>${avatar.name}</span></button>`
  ).join('')}</div>${canSave?'':'<p class="friends-muted">Profile pictures are unavailable until the avatar update is applied.</p>'}</div>`;
 }
-function goalRow(g,other){const pct=g.target>0?Math.min(100,Math.round(g.progress/g.target*100)):0;
- const sent=nudges.some(n=>n.sender===user.id&&n.recipient===g.owner_id&&n.goal_id===g.goal_id&&n.sent_on===new Date().toISOString().slice(0,10));
- return `<div class="friends-row"><div style="flex:1;min-width:0"><div class="name">${esc(g.goal_name)}</div><div class="friends-muted">${esc(g.category)} · ${esc(g.progress)}${g.unit?' '+esc(g.unit):''} / ${esc(g.target)} ${esc(g.unit)} · ${esc(g.frequency)}</div><div style="height:5px;background:#e3e9df;border-radius:5px;margin-top:7px;overflow:hidden"><div style="width:${pct}%;background:#719B74;height:100%"></div></div></div>${g.completed?'<span class="friends-muted">✓ Done</span>':`<button class="friends-btn light" data-nudge="${esc(g.owner_id)}" data-goal="${esc(g.goal_id)}" ${sent||busy?'disabled':''}>${sent?'Nudged':'Nudge'}</button>`}</div>`;
+function goalRow(g,used,ready){const pct=g.target>0?Math.min(100,Math.round(g.progress/g.target*100)):0;
+ const sent=used.has(g.goal_id);
+ const atLimit=used.size>=3;
+ return `<div class="friends-row"><div style="flex:1;min-width:0"><div class="name">${esc(g.goal_name)}</div><div class="friends-muted">${esc(g.category)} · ${esc(g.progress)}${g.unit?' '+esc(g.unit):''} / ${esc(g.target)} ${esc(g.unit)} · ${esc(g.frequency)}</div><div style="height:5px;background:#e3e9df;border-radius:5px;margin-top:7px;overflow:hidden"><div style="width:${pct}%;background:#719B74;height:100%"></div></div></div>${g.completed?'<span class="friends-muted">✓ Done</span>':`<button class="friends-btn light" data-nudge="${esc(g.owner_id)}" data-goal="${esc(g.goal_id)}" ${sent||atLimit||busy||!ready?'disabled':''}>${sent?'Nudged':atLimit?'Daily limit':'Nudge'}</button>`}</div>`;
 }
 function render(){if(!configured)return `<main class="screen">${friendsBanner()}<section class="card"><h3>Connect Harada to enable Friends</h3><p class="friends-muted">Your existing goals are safe. To connect with friends, create a free Supabase project and add its public URL and key to <b>friends-config.js</b>. Run the supplied <b>supabase-setup.sql</b> first.</p><p class="friends-muted">See SETUP_FRIENDS.md in the download for exact instructions.</p></section></main>`;
  if(!user)return `<main class="screen">${friendsBanner()}<section class="card"><h3>Sign in to connect</h3><p class="friends-muted">Your existing goals stay on this phone. Only goals you explicitly share will be uploaded.</p><form id="friends-auth" class="friends-stack"><input class="friends-field" name="name" placeholder="Display name (for new accounts)"><input class="friends-field" name="email" type="email" placeholder="Email" required autocomplete="email"><input class="friends-field" name="password" type="password" placeholder="Password (at least 6 characters)" minlength="6" required autocomplete="current-password"><div class="rowbtns"><button class="friends-btn" name="intent" value="login" ${busy?'disabled':''}>Sign in</button><button class="friends-btn light" name="intent" value="signup" ${busy?'disabled':''}>Create account</button></div></form></section>${message?`<p class="friends-feedback">${esc(message)}</p>`:''}</main>`;
- const s=app()?.getState(),selected=s?.sharedGoalIds||[];
+ const s=app()?.getState(),selected=s?.sharedGoalIds||[], ready=loadedNudgeDay===nudgeDay();
  const tabs=`<div class="friends-tabs">${[['feed','Friends'],['share','Share goals'],['requests','Requests']].map(([id,label])=>`<button data-friends-section="${id}" class="${section===id?'active':''}">${label}${id==='requests'&&requests.length?' ('+requests.length+')':''}</button>`).join('')}</div>`;
  let body='';
  if(section==='share')body=`<section class="card"><h3>Choose what friends can see</h3><p class="friends-muted">All goals are private by default. Friends see only the goals you select and their current progress, not your entire history.</p>${s?.goals.length?s.goals.map(g=>`<label class="friends-row"><span><b>${esc(g.name)}</b><div class="friends-muted">${esc(s.categories.find(c=>c.id===g.cat)?.name||'')}</div></span><input class="friends-toggle" type="checkbox" data-share-goal="${esc(g.id)}" ${selected.includes(g.id)?'checked':''}></label>`).join(''):'<p class="friends-muted">Create a goal in the Goals tab first.</p>'}</section>`;
  else if(section==='requests')body=`<section class="card"><h3>Friend requests</h3>${requests.length?requests.map(r=>`<div class="friends-row">${personWithAvatar(r.requester)}<div style="display:flex;gap:5px"><button class="friends-btn" data-respond="${r.id}" data-status="accepted">Accept</button><button class="friends-btn light" data-respond="${r.id}" data-status="declined">Decline</button></div></div>`).join(''):'<p class="friends-muted">No incoming requests.</p>'}<h3 style="margin-top:16px">Sent requests</h3>${outgoing.length?outgoing.map(r=>`<div class="friends-row">${personWithAvatar(r.recipient)}<span class="friends-muted">Pending</span></div>`).join(''):'<p class="friends-muted">None pending.</p>'}</section>`;
- else body=`${nudges.filter(n=>n.recipient===user.id).length?`<section class="card"><h3>Recent nudges</h3>${nudges.filter(n=>n.recipient===user.id).slice(0,5).map(n=>`<div class="friends-row"><span class="friends-person">${avatarImage(friendAvatars[n.sender])}<span><b>${person(n.sender)}</b> nudged you about <b>${esc(n.goal_name)}</b></span></span><span class="friends-muted">${new Date(n.created_at).toLocaleDateString()}</span></div>`).join('')}</section>`:''}<section class="card"><h3>Your friends</h3>${friends.length?friends.map(f=>{const other=f.requester===user.id?f.recipient:f.requester,goals=shared.filter(g=>g.owner_id===other);return `<div style="padding:8px 0"><div class="friends-row">${personWithAvatar(other)}<button class="friends-btn light" data-unfriend="${f.id}">Remove</button></div>${goals.length?goals.map(g=>goalRow(g,other)).join(''):'<p class="friends-muted">No goals shared yet.</p>'}</div>`}).join(''):'<p class="friends-muted">No friends yet. Share your friend ID below or enter theirs.</p>'}</section><section class="card"><h3>Add a friend</h3><p class="friends-muted">Share your friend ID privately. Your friend can paste it here to send a request.</p><div class="friends-code">${esc(user.id)}</div><div class="rowbtns"><button class="friends-btn light" data-copy-id>Copy my ID</button></div><form id="friends-add" class="friends-stack" style="margin-top:12px"><input class="friends-field" name="friendid" placeholder="Paste a friend's ID" required><button class="friends-btn" ${busy?'disabled':''}>Send friend request</button></form></section>`;
+ else body=`${nudges.filter(n=>n.recipient===user.id).length?`<section class="card"><h3>Recent nudges</h3>${nudges.filter(n=>n.recipient===user.id).slice(0,5).map(n=>`<div class="friends-row"><span class="friends-person">${avatarImage(friendAvatars[n.sender])}<span><b>${person(n.sender)}</b> nudged you about <b>${esc(n.goal_name)}</b></span></span><span class="friends-muted">${new Date(n.created_at).toLocaleDateString()}</span></div>`).join('')}</section>`:''}<section class="card"><h3>Your friends</h3>${friends.length?friends.map(f=>{const other=f.requester===user.id?f.recipient:f.requester,goals=shared.filter(g=>g.owner_id===other),used=new Set(ready?dailyNudges.filter(n=>n.recipient===other).map(n=>n.goal_id):[]);return `<div style="padding:8px 0"><div class="friends-row"><div>${personWithAvatar(other)}${ready?'<div class="friends-muted">'+Math.min(3,used.size)+' of 3 nudges today</div>':''}</div><button class="friends-btn light" data-unfriend="${f.id}">Remove</button></div>${goals.length?goals.map(g=>goalRow(g,used,ready)).join(''):'<p class="friends-muted">No goals shared yet.</p>'}</div>`}).join(''):'<p class="friends-muted">No friends yet. Share your friend ID below or enter theirs.</p>'}</section><section class="card"><h3>Add a friend</h3><p class="friends-muted">Share your friend ID privately. Your friend can paste it here to send a request.</p><div class="friends-code">${esc(user.id)}</div><div class="rowbtns"><button class="friends-btn light" data-copy-id>Copy my ID</button></div><form id="friends-add" class="friends-stack" style="margin-top:12px"><input class="friends-field" name="friendid" placeholder="Paste a friend's ID" required><button class="friends-btn" ${busy?'disabled':''}>Send friend request</button></form></section>`;
  return `<main class="screen">${friendsBanner()}<section class="card"><div class="friends-row"><div class="friends-person">${avatarImage(profile?.avatar,true)}<div><b>${esc(profile?.display_name||user.email||'My account')}</b><div class="friends-muted">Connected to Harada Friends</div></div></div><button class="friends-btn light" data-signout>Sign out</button></div>${profilePictures()}</section>${tabs}<section class="card" id="harada-push-controls"><h3>Phone notifications</h3><p class="friends-muted">Loading notification settings…</p></section>${message?`<p class="friends-feedback" role="status" style="margin-top:12px">${esc(message)}</p>`:''}<div style="margin-top:12px">${body}</div><button class="friends-btn light" data-friends-refresh style="width:100%;margin-bottom:15px">Refresh friends</button></main>`;
 }
 function bind(){window.HaradaPush?.draw();const form=document.querySelector('#friends-auth');if(form)form.onsubmit=e=>{e.preventDefault();const f=new FormData(form),intent=e.submitter?.value||'login';signIn(String(f.get('email')).trim(),String(f.get('password')),intent==='signup',String(f.get('name')).trim())};
@@ -102,11 +114,11 @@ function bind(){window.HaradaPush?.draw();const form=document.querySelector('#fr
  document.querySelectorAll('[data-unfriend]').forEach(b=>b.onclick=()=>{if(!confirm('Remove this friend?'))return;action(async()=>{const r=await db.from('harada_friendships').delete().eq('id',b.dataset.unfriend);if(r.error)throw r.error},'Friend removed.')});
  document.querySelectorAll('[data-nudge]').forEach(b=>b.onclick=()=>action(async()=>{const g=shared.find(x=>x.owner_id===b.dataset.nudge&&x.goal_id===b.dataset.goal);if(!g)throw Error('Goal is no longer available.');const r=await db.from('harada_nudges').insert({sender:user.id,recipient:g.owner_id,goal_id:g.goal_id,goal_name:g.goal_name}).select('id').single();if(r.error)throw r.error;if(r.data?.id)window.HaradaPush?.notifyNudge(r.data.id)},'Nudge sent! Your friend will see it in Harada.'));
  const cp=document.querySelector('[data-copy-id]');if(cp)cp.onclick=async()=>{try{await navigator.clipboard.writeText(user.id);friendly('Friend ID copied.')}catch{friendly('Copy the ID displayed above.')}};
- const out=document.querySelector('[data-signout]');if(out)out.onclick=()=>action(async()=>{const r=await db.auth.signOut();if(r.error)throw r.error;user=null;friends=[];shared=[];nudges=[]},'Signed out.');
+ const out=document.querySelector('[data-signout]');if(out)out.onclick=()=>action(async()=>{const r=await db.auth.signOut();if(r.error)throw r.error;user=null;friends=[];shared=[];nudges=[];dailyNudges=[];loadedNudgeDay=null},'Signed out.');
  const refresh=document.querySelector('[data-friends-refresh]');if(refresh)refresh.onclick=()=>action(load,'Friends updated.');
 }
 async function init(){if(booted||!db)return;booted=true;try{const {data,error:e}=await db.auth.getUser();if(e&&e.name!=='AuthSessionMissingError')throw e;if(data?.user){user=data.user;await ensureProfile();await sync();await load()}}
- catch(e){error(e)}ui();db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){user=null;ui()}else if(event==='SIGNED_IN'&&session?.user&&!user){user=session.user;setTimeout(()=>initSignedIn().catch(error),0)}});
+ catch(e){error(e)}ui();db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){user=null;dailyNudges=[];loadedNudgeDay=null;ui()}else if(event==='SIGNED_IN'&&session?.user&&!user){user=session.user;setTimeout(()=>initSignedIn().catch(error),0)}});
  refreshTimer=setInterval(()=>{if(user&&document.visibilityState==='visible')load().catch(()=>{})},30000);
 }
 async function initSignedIn(){await ensureProfile();await sync();await load()}
