@@ -6,6 +6,7 @@
   const linkKey = 'harada-account-link-v1';
   const fields = ['categories', 'goals', 'entries', 'charts', 'sharedGoalIds'];
   let running = false;
+  let manualCheck = false;
   let timer;
   let status = 'Sign in under Friends to sync your goals and check-ins.';
   let canStart = false;
@@ -54,18 +55,24 @@
     if (!panel) return;
     const message = panel.querySelector('[data-sync-status]');
     const button = panel.querySelector('[data-sync-now]');
-    message.textContent = status;
+    message.textContent = manualCheck && running ? 'Checking account sync…' : status;
     button.hidden = !account();
-    button.textContent = canStart ? 'Start sync from this device' : 'Sync now';
+    button.textContent = manualCheck && running ? 'Syncing…' : canStart ? 'Start sync from this device' : 'Sync now';
+    button.disabled = manualCheck && running;
     button.onclick = () => {
       const owner = account();
-      if (!owner || running) return;
+      if (!owner) return;
+      if (running) {
+        manualCheck = true;
+        draw();
+        return;
+      }
       if (canStart && confirm('Use the goals and check-ins on this device to start account sync?')) {
         confirmedOwner = owner.id;
       } else if (canStart) {
         return;
       }
-      return sync();
+      return sync(true);
     };
   }
 
@@ -80,7 +87,7 @@
     }
   }
 
-  async function sync() {
+  async function sync(manual = false) {
     if (running) return;
     const owner = account();
     if (!owner) {
@@ -89,6 +96,8 @@
     }
 
     running = true;
+    manualCheck = manual;
+    if (manual) draw();
     const { id, db } = owner;
     try {
       const link = JSON.parse(localStorage.getItem(linkKey) || 'null');
@@ -131,7 +140,10 @@
         if (localVersion === remoteVersion) {
           if (link?.baseline !== localVersion) remember(id, local);
         } else if (link ? localVersion === link.baseline : !hasHistory(local)) {
-          if (!app().canApplySync()) return;
+          if (!app().canApplySync()) {
+            show('Account data is ready. Finish your current edit, then sync again.');
+            return;
+          }
           backUp(id);
           app().applySync(remote.state);
           remember(id, remote.state);
@@ -150,13 +162,18 @@
           return;
         }
       }
-      show('Goals and check-ins are synced.');
+      if (manualCheck || !status.startsWith('Goals and check-ins are synced.')) {
+        const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+        show('Goals and check-ins are synced. Checked at ' + time + '.');
+      }
       if (!link || link.baseline !== fingerprint(snapshot())) window.HaradaFriends?.scheduleSync();
     } catch {
       show('Sync unavailable. Your local goals and check-ins are still saved. Tap Sync now to retry.');
     } finally {
       confirmedOwner = null;
       running = false;
+      manualCheck = false;
+      draw();
     }
   }
 
