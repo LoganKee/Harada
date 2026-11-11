@@ -1,5 +1,5 @@
-const CACHE = 'harada-20261111-account-sync-v2';
-const FILES=['./','./index.html','./app.js','./app.js?v=17','./friends.js','./friends.js?v=5','./account-sync.js?v=2','./sprite.svg','./sprite-avatar.png','./push.js','./friends-config.js','./manifest.webmanifest','./icon-192.png','./icon-512.png','./monkus.png','./forest.svg','./monkus-swing.svg','./monkus-today.svg','./monkus-growth.svg','./monkus-goals.svg','./monkus-settings.svg'];
+const CACHE = 'harada-20261111-goal-filters-v1';
+const FILES=['./','./index.html','./app.js','./app.js?v=18','./friends.js','./friends.js?v=5','./account-sync.js?v=2','./sprite.svg','./sprite-avatar.png','./push.js','./friends-config.js','./manifest.webmanifest','./icon-192.png','./icon-512.png','./monkus.png','./forest.svg','./monkus-swing.svg','./monkus-today.svg','./monkus-growth.svg','./monkus-goals.svg','./monkus-settings.svg'];
 
 self.addEventListener('install', event => {
   const requests = FILES.map(path => new Request(path, { cache: 'reload' }));
