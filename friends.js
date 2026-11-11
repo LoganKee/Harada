@@ -22,10 +22,13 @@ function progress(g,s){const now=new Date(),today=`${now.getFullYear()}-${String
  let total=0;for(const [date,values] of Object.entries(s.entries||{}))if(date>=start&&date<=today)total+=Number(values[g.id]||0);
  return {owner_id:user.id,goal_id:g.id,goal_name:g.name,category:s.categories.find(c=>c.id===g.cat)?.name||'Goal',frequency:g.frequency,progress:Math.round(total*100)/100,target:g.target,unit:g.unit||'',mode:g.mode||'reach',completed:g.mode==='under'?total<=g.target:total>=g.target,updated_at:new Date().toISOString()};
 }
-async function sync(){if(!user||!db)return;const s=app()?.getState();if(!s)return;const ids=(s.sharedGoalIds||[]).filter(id=>s.goals.some(g=>g.id===id));
+async function sync(){if(!user||!db)return;const ownerId=user.id;const s=app()?.getState();if(!s)return;const ids=(s.sharedGoalIds||[]).filter(id=>s.goals.some(g=>g.id===id));
  const rows=s.goals.filter(g=>ids.includes(g.id)).map(g=>progress(g,s));
  const {data:existing,error:readError}=await db.from('harada_shared_goals').select('goal_id').eq('owner_id',user.id);if(readError)throw readError;
- const toDelete=(existing||[]).map(r=>r.goal_id).filter(id=>!ids.includes(id));
+ if(user?.id!==ownerId||app()?.getState()!==s)return;
+ const localGoalIds=new Set(s.goals.map(g=>g.id));
+ const canRemoveMissing=window.HaradaAccountSync?.canRemoveMissingSharedGoals(user?.id);
+ const toDelete=(existing||[]).map(r=>r.goal_id).filter(id=>(canRemoveMissing||localGoalIds.has(id))&&!ids.includes(id));
  if(toDelete.length){const {error:e}=await db.from('harada_shared_goals').delete().eq('owner_id',user.id).in('goal_id',toDelete);if(e)throw e}
  if(rows.length){const {error:e}=await db.from('harada_shared_goals').upsert(rows,{onConflict:'owner_id,goal_id'});if(e)throw e}
 }
@@ -56,9 +59,9 @@ async function load(){if(!user)return;
 async function reload(){if(!user)return;await load()}
 async function signIn(email,password,signup,name){busy=true;ui();try{
  if(signup){const r=await db.auth.signUp({email,password,options:{data:{display_name:name}}});if(r.error)throw r.error;
- if(r.data.user&&r.data.session){user=r.data.user;await ensureProfile(name);await sync();await load();friendly('Account created. You can now connect with friends.')}
+ if(r.data.user&&r.data.session){user=r.data.user;window.HaradaAccountSync?.schedule();await ensureProfile(name);await sync();await load();friendly('Account created. You can now connect with friends.')}
  else friendly('Check your email to confirm your account, then sign in.')}
- else{const r=await db.auth.signInWithPassword({email,password});if(r.error)throw r.error;user=r.data.user;await ensureProfile();await sync();await load();friendly('Signed in. Your existing goals are still saved on this device.')}
+ else{const r=await db.auth.signInWithPassword({email,password});if(r.error)throw r.error;user=r.data.user;window.HaradaAccountSync?.schedule();await ensureProfile();await sync();await load();friendly('Signed in. Your existing goals are still saved on this device.')}
  }catch(e){error(e)}finally{busy=false;ui()}}
 async function ensureProfile(name){if(!user)return;const existing=await db.from('harada_profiles').select('id').eq('id',user.id).maybeSingle();if(existing.error)throw existing.error;
  if(!existing.data){const display=(name||user.user_metadata?.display_name||user.email?.split('@')[0]||'Harada friend').slice(0,60);const r=await db.from('harada_profiles').insert({id:user.id,display_name:display});if(r.error)throw r.error}}
@@ -108,7 +111,7 @@ function bind(){window.HaradaPush?.draw();const form=document.querySelector('#fr
   },'Profile picture saved.');
  });
  document.querySelectorAll('[data-friends-section]').forEach(b=>b.onclick=()=>{section=b.dataset.friendsSection;message='';ui()});
- document.querySelectorAll('[data-share-goal]').forEach(b=>b.onchange=()=>{const s=app().getState();s.sharedGoalIds=s.sharedGoalIds||[];s.sharedGoalIds=b.checked?[...new Set([...s.sharedGoalIds,b.dataset.shareGoal])]:s.sharedGoalIds.filter(id=>id!==b.dataset.shareGoal);localStorage.setItem('gbb-v2',JSON.stringify(s));scheduleSync();ui()});
+ document.querySelectorAll('[data-share-goal]').forEach(b=>b.onchange=()=>{const s=app().getState();s.sharedGoalIds=s.sharedGoalIds||[];s.sharedGoalIds=b.checked?[...new Set([...s.sharedGoalIds,b.dataset.shareGoal])]:s.sharedGoalIds.filter(id=>id!==b.dataset.shareGoal);localStorage.setItem('gbb-v2',JSON.stringify(s));scheduleSync();window.HaradaAccountSync?.schedule();ui()});
  const add=document.querySelector('#friends-add');if(add)add.onsubmit=e=>{e.preventDefault();const id=String(new FormData(add).get('friendid')).trim();if(!/^[a-f\d]{8}-[a-f\d]{4}-[1-8][a-f\d]{3}-[89ab][a-f\d]{3}-[a-f\d]{12}$/i.test(id))return friendly('That is not a valid friend ID.');if(id===user.id)return friendly('You cannot add yourself.');action(async()=>{const r=await db.from('harada_friendships').insert({requester:user.id,recipient:id});if(r.error)throw r.error},'Friend request sent.')};
  document.querySelectorAll('[data-respond]').forEach(b=>b.onclick=()=>action(async()=>{const r=await db.from('harada_friendships').update({status:b.dataset.status}).eq('id',b.dataset.respond).eq('recipient',user.id);if(r.error)throw r.error},b.dataset.status==='accepted'?'Friend added.':'Request declined.'));
  document.querySelectorAll('[data-unfriend]').forEach(b=>b.onclick=()=>{if(!confirm('Remove this friend?'))return;action(async()=>{const r=await db.from('harada_friendships').delete().eq('id',b.dataset.unfriend);if(r.error)throw r.error},'Friend removed.')});
@@ -117,11 +120,11 @@ function bind(){window.HaradaPush?.draw();const form=document.querySelector('#fr
  const out=document.querySelector('[data-signout]');if(out)out.onclick=()=>action(async()=>{const r=await db.auth.signOut();if(r.error)throw r.error;user=null;friends=[];shared=[];nudges=[];dailyNudges=[];loadedNudgeDay=null},'Signed out.');
  const refresh=document.querySelector('[data-friends-refresh]');if(refresh)refresh.onclick=()=>action(load,'Friends updated.');
 }
-async function init(){if(booted||!db)return;booted=true;try{const {data,error:e}=await db.auth.getUser();if(e&&e.name!=='AuthSessionMissingError')throw e;if(data?.user){user=data.user;await ensureProfile();await sync();await load()}}
- catch(e){error(e)}ui();db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){user=null;dailyNudges=[];loadedNudgeDay=null;ui()}else if(event==='SIGNED_IN'&&session?.user&&!user){user=session.user;setTimeout(()=>initSignedIn().catch(error),0)}});
+async function init(){if(booted||!db)return;booted=true;try{const {data,error:e}=await db.auth.getUser();if(e&&e.name!=='AuthSessionMissingError')throw e;if(data?.user){user=data.user;window.HaradaAccountSync?.schedule();await ensureProfile();await sync();await load()}}
+ catch(e){error(e)}ui();db.auth.onAuthStateChange((event,session)=>{if(event==='SIGNED_OUT'){user=null;window.HaradaAccountSync?.schedule();dailyNudges=[];loadedNudgeDay=null;ui()}else if(event==='SIGNED_IN'&&session?.user&&!user){user=session.user;setTimeout(()=>initSignedIn().catch(error),0)}});
  refreshTimer=setInterval(()=>{if(user&&document.visibilityState==='visible')load().catch(()=>{})},30000);
 }
-async function initSignedIn(){await ensureProfile();await sync();await load()}
-window.HaradaFriends={render,bind,scheduleSync,names:{}};
+async function initSignedIn(){window.HaradaAccountSync?.schedule();await ensureProfile();await sync();await load()}
+window.HaradaFriends={render,bind,scheduleSync,getSyncAccount:()=>user&&db?{id:user.id,db}:null,names:{}};
 init();
 })();
